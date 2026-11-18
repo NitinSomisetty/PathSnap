@@ -1,0 +1,54 @@
+{
+    "Random Forest": {
+        "model": "Random Forest",
+        "eligible_candidate_count": 118594,
+        "confusion_matrix": {
+            "true_negative": 93179,
+            "false_positive": 7805,
+            "false_negative": 1145,
+            "true_positive": 16465
+        },
+        "log_loss": 0.17925316275655062,
+        "usable_reference_observations": 17646,
+        "candidate_misses": 36,
+        "candidate_miss_rate": 0.002040122407344441,
+        "classifier_only_correct": 14535,
+        "classifier_only_end_to_end_accuracy": 0.8236994219653179,
+        "viterbi_correct": 15875,
+        "viterbi_end_to_end_accuracy": 0.8996373115720276,
+        "viterbi_continuous_transitions": 19032,
+        "viterbi_disconnected_transitions": 116,
+        "viterbi_missing_transitions": 0,
+        "viterbi_route_continuity_rate": 0.993941926049718,
+        "viterbi_sequence_exact_matches": 0,
+        "viterbi_evaluated_sequences": 10,
+        "viterbi_sequence_exact_match_rate": 0.0,
+        "label_caveat": "Reference targets are derived monotone-alignment weak labels, not independently supplied GPS ground truth."
+    },
+    "XGBoost": {
+        "model": "XGBoost",
+        "eligible_candidate_count": 118594,
+        "confusion_matrix": {
+            "true_negative": 98093,
+            "false_positive": 2891,
+            "false_negative": 3381,
+            "true_positive": 14229
+        },
+        "log_loss": 0.12592522618954421,
+        "usable_reference_observations": 17646,
+        "candidate_misses": 36,
+        "candidate_miss_rate": 0.002040122407344441,
+        "classifier_only_correct": 14580,
+        "classifier_only_end_to_end_accuracy": 0.8262495749744985,
+        "viterbi_correct": 15660,
+        "viterbi_end_to_end_accuracy": 0.8874532471948317,
+        "viterbi_continuous_transitions": 18979,
+        "viterbi_disconnected_transitions": 169,
+        "viterbi_missing_transitions": 0,
+        "viterbi_route_continuity_rate": 0.9911740129517443,
+        "viterbi_sequence_exact_matches": 0,
+        "viterbi_evaluated_sequences": 10,
+        "viterbi_sequence_exact_match_rate": 0.0,
+        "label_caveat": "Reference targets are derived monotone-alignment weak labels, not independently supplied GPS ground truth."
+    }
+}

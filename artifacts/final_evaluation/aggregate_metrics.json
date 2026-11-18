@@ -1,0 +1,22 @@
+{
+    "candidate_count": 118594,
+    "positive_count": 17610,
+    "accuracy": 0.9245324384032919,
+    "precision": 0.6784095591264936,
+    "recall": 0.9349801249290176,
+    "f1": 0.7862941738299905,
+    "average_precision": 0.9070493995244426,
+    "roc_auc": 0.9801607688578347,
+    "observation_count": 17610,
+    "observation_top1_accuracy": 0.8253833049403748,
+    "no_positive_candidate_rate": 0.0,
+    "mean_trip_viterbi_weak_label_accuracy": 0.9018124602208272,
+    "evaluated_trip_count": 9,
+    "student_test_trip_count": 10,
+    "total_candidate_rows": 130923,
+    "eligible_candidate_rows": 118594,
+    "excluded_trips_without_eligible_labels": [
+        "00000076"
+    ],
+    "label_caveat": "Evaluation targets are derived weak labels aligned from reference routes, not independently supplied GPS ground truth."
+}
