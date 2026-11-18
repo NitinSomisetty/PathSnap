@@ -1,6 +1,14 @@
 __pycache__/
+*.py[cod]
 .ipynb_checkpoints/
 Student_folder/
 results/processed/
+.venv/
+
 artifacts/*
 !artifacts/.gitkeep
+!artifacts/xgboost_model.json
+!artifacts/linear_svm_model.joblib
+!artifacts/advanced_model_evaluation.csv
+!artifacts/advanced_model_tuning.json
+!artifacts/xgboost_predictions.csv
