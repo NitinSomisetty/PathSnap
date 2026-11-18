@@ -17,14 +17,15 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from pyproj import CRS, Transformer
 
-# Notebook map: 01_data_exploration.ipynb calls inventory for dataset checks;
-# discover_trips, clean_track, read_graph, RoadIndex and
-# build_candidate_features for its feature example; read_reference and
-# align_reference for its weak-label example; make_map and project for
-# visualisation; process_dataset for all-trip exports; and discover_trips
-# again for trip-level folds. Functions not called by name in that notebook
-# are helpers for those steps. The 02 and 03 notebooks are outlines only.
+# This file supports 01_data_exploration.ipynb:
+# 1. Read and check each trip.
+# 2. Find road segments near each GPS point and describe each possible match.
+# 3. Separately compare GPS points with the supplied route to make rough labels.
+# 4. Save the processed data and draw an example map.
+# The model-training and route-reconstruction notebooks are still outlines.
 
+# The order here is the column order in the saved candidate feature matrix.
+# One row describes one possible match between a GPS point and a road arc.
 FEATURE_NAMES = [
     "distance_m", "arc_length_m", "projection_fraction",
     "distance_to_start_m", "distance_to_end_m", "heading_cos",
@@ -36,7 +37,11 @@ FEATURE_NAMES = [
 
 @dataclass(frozen=True)
 class Config:
-    """Thresholds shared by notebook 01's processing and EDA steps."""
+    """Settings shared by the steps in notebook 01.
+
+    Search up to 100 m around a GPS point and keep at most eight road arcs.
+    The remaining values flag unusual GPS motion or uncertain rough labels.
+    """
     candidate_radius_m: float = 100.0
     max_candidates: int = 8
     index_spacing_m: float = 50.0
@@ -47,7 +52,11 @@ class Config:
     label_max_monotonic_excess_m: float = 25.0
 
 def discover_trips(data_root, partition):
-    """Find permitted trip folders for notebook 01 examples, inventory and folds."""
+    """List trip folders in train or student_test.
+
+    Used by notebook 01 when counting trips, choosing an example and making
+    validation folds. The export step also calls it for every trip.
+    """
     if partition not in ("train", "student_test"):
         raise ValueError("Only train and student_test are permitted in development.")
     folder = Path(data_root) / partition
@@ -56,14 +65,23 @@ def discover_trips(data_root, partition):
     return sorted(p for p in folder.iterdir() if p.is_dir())
 
 def read_numeric(path, columns):
-    """Read a headerless table for the graph, route and GPS readers below."""
+    """Read a whitespace-separated file and check its column count.
+
+    The .track, .nodes, .arcs and .route files have no column headers.
+    Other file-reading functions call this helper.
+    """
     values = np.loadtxt(path, dtype=np.float64, ndmin=2)
     if values.shape[1] != columns:
         raise ValueError(f"{path}: expected {columns} columns, got {values.shape}")
     return values
 
 def read_graph(trip):
-    """Validate trip-local nodes/arcs; notebook 01 uses these for features/maps."""
+    """Read the road network for one trip.
+
+    .nodes contains road-point coordinates. Each .arcs row connects two node
+    IDs; that row's position is its arc ID. Notebook 01 uses the network to
+    find candidates, measure features and draw grey road lines.
+    """
     trip = Path(trip)
     nodes = read_numeric(trip / f"{trip.name}.nodes", 2)
     raw = read_numeric(trip / f"{trip.name}.arcs", 2)
@@ -74,11 +92,15 @@ def read_graph(trip):
     arcs = raw.astype(np.int64)
     if arcs.min() < 0 or arcs.max() >= len(nodes):
         raise ValueError(f"{trip}: arc endpoint outside node table")
-    # Original row order is NEVER changed: row number is the local arc ID.
+    # Never reorder arcs: their row numbers are the IDs used by .route.
     return nodes, arcs
 
 def read_reference(trip, n_arcs):
-    """Read ordered reference arcs for notebook 01 alignment/map, never features."""
+    """Read the supplied sequence of arc IDs from .route.
+
+    Notebook 01 uses it to draw the green path and make rough training labels.
+    It is deliberately not read while building candidate features.
+    """
     trip = Path(trip)
     raw = read_numeric(trip / f"{trip.name}.route", 1).ravel()
     if not len(raw) or not np.isfinite(raw).all() or not np.equal(raw, np.floor(raw)).all():
@@ -89,7 +111,13 @@ def read_reference(trip, n_arcs):
     return route
 
 def clean_track(trip, config=Config()):
-    """Clean GPS rows for notebook 01 examples, inventory, export and map."""
+    """Read .track and return GPS points in time order plus a cleaning report.
+
+    Bad coordinates/timestamps, gaps over 30 s and apparent speeds over
+    60 m/s are removed; duplicate times keep their first row.
+    observation_id preserves the row's original position in .track.
+    Notebook 01 uses this for checks, features, exports and maps.
+    """
     trip = Path(trip)
     raw = read_numeric(trip / f"{trip.name}.track", 3)
     frame = pd.DataFrame(raw, columns=["longitude", "latitude", "timestamp_s"])
@@ -106,12 +134,32 @@ def clean_track(trip, config=Config()):
     clean = clean.loc[~duplicate].reset_index(drop=True)
     if clean.empty:
         raise ValueError(f"{trip}: no valid observations")
+    # Judge each row against its previous row in the original time-sorted track.
+    # Remove flagged rows once; do not repeatedly delete points after a GPS gap.
+    lon, lat = clean[["longitude", "latitude"]].median()
+    _, transformer = projection_for(np.array([[lon, lat]]))
+    xy = project(transformer, clean[["longitude", "latitude"]].to_numpy())
+    dt = np.r_[0.0, np.diff(clean.timestamp_s.to_numpy())]
+    step = np.r_[0.0, np.linalg.norm(np.diff(xy, axis=0), axis=1)]
+    speed = np.divide(step, dt, out=np.zeros_like(step), where=dt > 0)
+    gap_flag = dt > config.gap_seconds
+    speed_flag = speed > config.max_plausible_speed_mps
+    audit["gap_observations_removed"] = int(gap_flag.sum())
+    audit["speed_observations_removed"] = int(speed_flag.sum())
+    audit["motion_observations_removed"] = int((gap_flag | speed_flag).sum())
+    clean = clean.loc[~(gap_flag | speed_flag)].reset_index(drop=True)
+    if clean.empty:
+        raise ValueError(f"{trip}: no observations after motion filtering")
     clean.insert(0, "trip_id", trip.name)
     audit["clean_observations"] = len(clean)
     return clean, audit
 
 def projection_for(nodes):
-    """Choose local UTM metres; called by RoadIndex and inventory."""
+    """Choose a local map projection from the trip's road coordinates.
+
+    GPS longitude/latitude are angles. The projection lets us measure road
+    lengths and GPS-to-road distances in metres instead of degrees.
+    """
     lon, lat = np.median(nodes, axis=0)
     zone = int(np.clip(np.floor((lon + 180) / 6) + 1, 1, 60))
     epsg = (32600 if lat >= 0 else 32700) + zone
@@ -119,25 +167,40 @@ def projection_for(nodes):
     return epsg, transformer
 
 def project(transformer, coordinates):
-    """Project lon/lat to metres for notebook 01 plots and spatial helpers."""
+    """Convert longitude/latitude pairs into x/y coordinates in metres."""
     x, y = transformer.transform(coordinates[:, 0], coordinates[:, 1])
     return np.column_stack([x, y])
 
 def segment_geometry(point, starts, vectors, length_sq):
-    """Exact point-to-road geometry for candidates, features and alignment."""
+    """Measure a point's distance to each road segment.
+
+    Also return where the nearest position falls along the segment:
+    0 is its start node and 1 is its end node.
+    """
     fraction = np.clip(np.sum((point - starts) * vectors, axis=1) / np.maximum(length_sq, 1e-12), 0, 1)
     nearest = starts + fraction[:, None] * vectors
     distance = np.linalg.norm(point - nearest, axis=1)
     return distance, fraction, nearest
 
-class RoadIndex:
-    """Radius query with a sampled-segment tree followed by exact distances.
+def segment_samples(starts, vectors, lengths, arc_ids, spacing):
+    """Place search points along roads so long arcs can still be found."""
+    intervals = np.maximum(1, np.ceil(lengths[arc_ids] / spacing).astype(int))
+    counts = intervals + 1
+    sample_arcs = np.repeat(arc_ids, counts)
+    offsets = np.repeat(np.cumsum(counts) - counts, counts)
+    fractions = (np.arange(counts.sum()) - offsets) / np.repeat(intervals, counts)
+    points = starts[sample_arcs] + fractions[:, None] * vectors[sample_arcs]
+    return sample_arcs, points
 
-    Each segment sample is at most spacing/2 from any point on that segment.
-    Querying radius + spacing/2 therefore covers every segment within radius.
+class RoadIndex:
+    """Find road segments close to a GPS point.
+
+    Sample points along each road segment to search quickly. Then calculate
+    exact point-to-segment distances before deciding which arcs are candidates.
+    Notebook 01 creates this index for its example and for every exported trip.
     """
     def __init__(self, nodes, arcs, config=Config()):
-        """Index road segments for notebook 01 feature generation and export."""
+        """Project nodes, index nonzero road arcs and count graph connections."""
         self.config = config
         self.nodes, self.arcs = nodes, arcs
         self.epsg, self.transformer = projection_for(nodes)
@@ -149,18 +212,20 @@ class RoadIndex:
         self.valid_arcs = np.flatnonzero(self.length > 1e-6)
         if not len(self.valid_arcs):
             raise ValueError("Graph contains no nonzero road segments")
-        intervals = np.maximum(1, np.ceil(self.length[self.valid_arcs] / config.index_spacing_m).astype(int))
-        counts = intervals + 1
-        self.sample_arc = np.repeat(self.valid_arcs, counts)
-        offsets = np.repeat(np.cumsum(counts) - counts, counts)
-        fraction = (np.arange(counts.sum()) - offsets) / np.repeat(intervals, counts)
-        samples = self.starts[self.sample_arc] + fraction[:, None] * self.vectors[self.sample_arc]
+        self.sample_arc, samples = segment_samples(
+            self.starts, self.vectors, self.length,
+            self.valid_arcs, config.index_spacing_m
+        )
         self.tree = cKDTree(samples)
         self.out_degree = np.bincount(arcs[:, 0], minlength=len(nodes))
         self.in_degree = np.bincount(arcs[:, 1], minlength=len(nodes))
 
     def candidates(self, point):
-        """Return nearby arc IDs; called per GPS point by build_candidate_features."""
+        """Return the closest arcs within the configured search radius.
+
+        build_candidate_features calls this once for each cleaned GPS point.
+        An empty result stays empty so candidate misses can be counted.
+        """
         c = self.config
         samples = self.tree.query_ball_point(point, c.candidate_radius_m + c.index_spacing_m / 2 + 1e-6)
         ids = np.unique(self.sample_arc[samples])
@@ -173,7 +238,11 @@ class RoadIndex:
         return np.array([], dtype=np.int64), np.array([]), np.array([]), np.empty((0, 2))
 
 def motion_features(clean, road, config):
-    """Compute previous-step motion used by build_candidate_features."""
+    """Describe how the vehicle moved since the previous GPS point.
+
+    Produces heading, elapsed time, distance, speed and gap/outlier flags.
+    The feature builder calls this; it does not look at future GPS points.
+    """
     xy = project(road.transformer, clean[["longitude", "latitude"]].to_numpy())
     delta = np.vstack([np.zeros((1, 2)), np.diff(xy, axis=0)])
     step = np.linalg.norm(delta, axis=1)
@@ -185,34 +254,56 @@ def motion_features(clean, road, config):
     direction = np.divide(delta, step[:, None], out=np.zeros_like(delta), where=step[:, None] > 0)
     return xy, direction, step, dt, speed, gap, outlier, heading_valid
 
+def features_for_one_point(i, point, ids, distances, fractions, xy, direction,
+                           step, dt, speed, gap, outlier, heading_valid, road):
+    """Describe one GPS point against all its nearby road arcs."""
+    length = road.length[ids]
+    unit = road.vectors[ids] / length[:, None]
+    n = len(ids)
+    if heading_valid[i]:
+        heading_cos = unit @ direction[i]
+        heading_sin = direction[i, 0] * unit[:, 1] - direction[i, 1] * unit[:, 0]
+    else:
+        heading_cos = heading_sin = np.zeros(n)
+    previous_point = xy[max(0, i - 1)]
+    previous_distance = segment_geometry(
+        previous_point, road.starts[ids], road.vectors[ids], road.length_sq[ids]
+    )[0]
+    end_points = road.starts[ids] + road.vectors[ids]
+    return np.column_stack([
+        distances, length, fractions,
+        np.linalg.norm(point - road.starts[ids], axis=1),
+        np.linalg.norm(point - end_points, axis=1),
+        heading_cos, heading_sin, np.full(n, heading_valid[i]),
+        np.full(n, speed[i]), np.full(n, dt[i]), np.full(n, step[i]),
+        np.full(n, gap[i]), np.full(n, outlier[i]), previous_distance,
+        np.arange(n), np.full(n, n), distances - distances[0],
+        road.out_degree[road.arcs[ids, 0]],
+        road.in_degree[road.arcs[ids, 1]],
+    ]).astype(np.float32)
+
 def build_candidate_features(clean, road, config=Config()):
-    """Build notebook 01's 19-feature rows without reading reference routes."""
+    """Make one 19-feature row per GPS point and nearby road candidate.
+
+    Distance and geometry describe how the point fits the road. Motion
+    describes whether the road direction fits recent travel. Return the
+    feature matrix, the matching GPS/arc IDs and observation diagnostics.
+    Notebook 01 calls this for an example and for all-trip export.
+    This function never reads .route or creates labels.
+    """
     xy, direction, step, dt, speed, gap, outlier, heading_valid = motion_features(clean, road, config)
     blocks, observation_indices, arc_ids = [], [], []
     counts = np.zeros(len(clean), dtype=np.int32)
     for i, point in enumerate(xy):
-        ids, dist, fraction, nearest = road.candidates(point)
+        ids, dist, fraction, _ = road.candidates(point)
         counts[i] = len(ids)
         if not len(ids):
-            continue  # Explicitly reported; no hidden far-away fallback.
-        length = road.length[ids]
-        unit = road.vectors[ids] / length[:, None]
-        cos = unit @ direction[i] if heading_valid[i] else np.zeros(len(ids))
-        sin = direction[i, 0] * unit[:, 1] - direction[i, 1] * unit[:, 0] if heading_valid[i] else np.zeros(len(ids))
-        previous = xy[max(0, i - 1)]
-        prev_dist = segment_geometry(previous, road.starts[ids], road.vectors[ids], road.length_sq[ids])[0]
-        n = len(ids)
-        f = np.column_stack([
-            dist, length, fraction, np.linalg.norm(point - road.starts[ids], axis=1),
-            np.linalg.norm(point - (road.starts[ids] + road.vectors[ids]), axis=1),
-            cos, sin, np.full(n, heading_valid[i]), np.full(n, speed[i]),
-            np.full(n, dt[i]), np.full(n, step[i]), np.full(n, gap[i]),
-            np.full(n, outlier[i]), prev_dist, np.arange(n), np.full(n, n),
-            dist - dist[0], road.out_degree[road.arcs[ids, 0]],
-            road.in_degree[road.arcs[ids, 1]],
-        ])
-        blocks.append(f.astype(np.float32))
-        observation_indices.extend([i] * n)
+            continue  # Record a miss; do not pretend a distant road is nearby.
+        blocks.append(features_for_one_point(
+            i, point, ids, dist, fraction, xy, direction, step, dt, speed,
+            gap, outlier, heading_valid, road
+        ))
+        observation_indices.extend([i] * len(ids))
         arc_ids.extend(ids)
     X = np.concatenate(blocks) if blocks else np.empty((0, len(FEATURE_NAMES)), dtype=np.float32)
     if not np.isfinite(X).all():
@@ -226,36 +317,51 @@ def build_candidate_features(clean, road, config=Config()):
     return dict(X=X, observation_index=np.asarray(observation_indices, dtype=np.int32),
                 arc_id=np.asarray(arc_ids, dtype=np.int64)), observations
 
-def align_reference(clean, road, route, config=Config()):
-    """Offline weak labels: minimum squared-distance monotone route alignment.
+def choose_route_positions(points, starts, vectors, length_sq):
+    """Match GPS points to an ordered route without moving backward.
 
-    GPS points may stay on or advance along route positions; backward moves
-    are disallowed. Start/end are free and skips are allowed for sampling gaps.
-    This is not a prediction decoder and must never be called at inference.
-    Notebook 01 calls it for an example; process_dataset calls it per trip.
+    For each point, keep the cheapest earlier route position. Work backward
+    at the end to recover the chosen position for every point.
+    """
+    count, route_count = len(points), len(starts)
+    previous = np.zeros(route_count)
+    positions = np.arange(route_count)
+    back = np.empty((count, route_count), dtype=np.uint32)
+    nearest = np.empty(count)
+
+    for i, point in enumerate(points):
+        distances = segment_geometry(point, starts, vectors, length_sq)[0]
+        nearest[i] = distances.min()
+        best_so_far = np.minimum.accumulate(previous)
+        best_position = np.maximum.accumulate(
+            np.where(previous <= best_so_far, positions, 0)
+        )
+        back[i] = best_position
+        previous = best_so_far + distances ** 2
+        previous -= previous.min()  # Keep numbers small; the best path is unchanged.
+
+    chosen = np.empty(count, dtype=np.int32)
+    chosen[-1] = int(np.argmin(previous))
+    for i in range(count - 1, 0, -1):
+        chosen[i - 1] = back[i, chosen[i]]
+    return chosen, nearest
+
+def align_reference(clean, road, route, config=Config()):
+    """Estimate a reference arc for each GPS point for later model training.
+
+    .route lists travelled arcs, but has no GPS-row labels. Follow its order
+    while choosing the closest plausible route position for each GPS point.
+    Points may remain on one arc or move forward; they cannot move backward.
+    Flag estimates that are too far from the road or otherwise uncertain.
+    Notebook 01 uses these *rough labels* for analysis and saved targets.
+    This is not the future HMM prediction decoder.
     """
     xy = project(road.transformer, clean[["longitude", "latitude"]].to_numpy())
     starts, vectors, sq = road.starts[route], road.vectors[route], road.length_sq[route]
-    n, m = len(xy), len(route)
-    back = np.empty((n, m), dtype=np.uint32)
-    cost = np.zeros(m)
-    positions = np.arange(m)
-    nearest_distance = np.empty(n)
-    for i, point in enumerate(xy):
-        distance = segment_geometry(point, starts, vectors, sq)[0]
-        nearest_distance[i] = distance.min()
-        minimum = np.minimum.accumulate(cost)
-        prefix_argmin = np.maximum.accumulate(np.where(cost <= minimum, positions, 0))
-        back[i] = prefix_argmin
-        cost = minimum + distance ** 2
-        cost -= cost.min()  # Numerical stabilisation; does not change optimum.
-    selected = np.empty(n, dtype=np.int32)
-    selected[-1] = int(np.argmin(cost))
-    for i in range(n - 1, 0, -1):
-        selected[i - 1] = back[i, selected[i]]
+    selected, nearest_distance = choose_route_positions(xy, starts, vectors, sq)
     chosen = route[selected]
-    distance = np.empty(n)
-    for i in range(n):
+    distance = np.empty(len(xy))
+    for i in range(len(xy)):
         distance[i] = segment_geometry(xy[i], road.starts[chosen[i:i+1]], road.vectors[chosen[i:i+1]], road.length_sq[chosen[i:i+1]])[0][0]
     connected = bool(np.all(road.arcs[route[:-1], 1] == road.arcs[route[1:], 0]))
     reliable = ((distance <= config.label_max_distance_m)
@@ -270,7 +376,10 @@ def align_reference(clean, road, route, config=Config()):
     })
 
 def inventory(data_root):
-    """Create notebook 01's per-trip data-quality and graph inventory."""
+    """Summarise every permitted trip for notebook 01's first table.
+
+    Count GPS rows, roads, route entries, time gaps and graph problems.
+    """
     rows = []
     for partition in ("train", "student_test"):
         for trip in discover_trips(data_root, partition):
@@ -313,12 +422,16 @@ def inventory(data_root):
     return pd.DataFrame(rows)
 
 def source_hashes(trip):
-    """Record raw-input hashes in process_dataset's per-trip metadata."""
+    """Fingerprint raw files so an export can be tied to its exact inputs."""
     return {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(Path(trip).iterdir()) if p.suffix in (".track", ".nodes", ".arcs", ".route")}
 
 def process_dataset(data_root, output_root, config=Config()):
-    """Export notebook 01's features, separate weak labels and summary."""
+    """Run the data pipeline for all train and student_test trips.
+
+    Save candidate features, cleaned GPS points, separate rough labels and a
+    summary of coverage. Notebook 01 calls this in its export section.
+    """
     output_root = Path(output_root)
     summary = []
     for partition in ("train", "student_test"):
@@ -329,7 +442,7 @@ def process_dataset(data_root, output_root, config=Config()):
             nodes, arcs = read_graph(trip)
             road = RoadIndex(nodes, arcs, config)
             candidates, observations = build_candidate_features(clean, road, config)
-            # Reference data enters only AFTER prediction features exist.
+            # Make features first; only then read .route to create labels.
             route = read_reference(trip, len(arcs))
             labels = align_reference(clean, road, route, config)
             oi = candidates["observation_index"]
@@ -337,8 +450,8 @@ def process_dataset(data_root, output_root, config=Config()):
             usable = labels.label_usable.to_numpy()
             hits = np.zeros(len(clean), dtype=bool)
             hits[oi[y == 1]] = True
-            # All-negative groups with absent reference candidates are excluded
-            # from fitting, but counted in miss-rate and end-to-end evaluation.
+            # If the reference arc is missing from a point's candidate list,
+            # do not train on that all-negative group. Still count the miss.
             fit_mask = usable[oi] & hits[oi]
             target = output_root / partition / trip.name
             target.mkdir(parents=True, exist_ok=True)
@@ -374,7 +487,13 @@ def process_dataset(data_root, output_root, config=Config()):
     return result
 
 def make_map(trip, output_path, max_gps_points=1500):
-    """Create notebook 01's Folium EDA map without external background tiles."""
+    """Draw notebook 01's interactive example map.
+
+    Blue circles are GPS points from .track, grey lines are network arcs,
+    and green lines are the supplied .route. No model prediction is shown.
+    The map uses no external background tiles, so blocked tile requests
+    cannot cover the trip data.
+    """
     import folium
     trip = Path(trip)
     clean, _ = clean_track(trip)
