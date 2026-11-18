@@ -1,0 +1,40 @@
+{
+    "linear_svm": {
+        "best_cv_average_precision": 0.8478196445814437,
+        "best_parameters": {
+            "svm__C": 0.060163078295899286
+        },
+        "tuning_rows": 70000,
+        "final_training_rows": 1021740,
+        "validation_folds": 5,
+        "class_weight": "balanced",
+        "scoring": "average_precision"
+    },
+    "xgboost": {
+        "best_cv_average_precision": 0.8921825506188226,
+        "training_rows": 1021740
+    },
+    "feature_names": [
+        "distance_m",
+        "arc_length_m",
+        "projection_fraction",
+        "distance_to_start_m",
+        "distance_to_end_m",
+        "heading_cos",
+        "heading_sin",
+        "heading_valid",
+        "speed_mps",
+        "dt_s",
+        "step_distance_m",
+        "gap_flag",
+        "speed_outlier_flag",
+        "previous_point_distance_m",
+        "candidate_rank",
+        "candidate_count",
+        "distance_margin_m",
+        "out_degree",
+        "in_degree"
+    ],
+    "training_trips": 70,
+    "label_type": "derived_weak_labels"
+}
