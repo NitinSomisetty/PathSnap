@@ -1,4 +1,4 @@
-﻿"""Shared PathSnap data pipeline. No evaluator data is discovered automatically.
+"""Shared PathSnap data pipeline. No evaluator data is discovered automatically.
 
 Candidate features never read .route. Reference alignment is a separate,
 offline operation producing weak observation labels, not measured ground truth.
@@ -205,6 +205,29 @@ def build_candidate_features(clean, road, config=Config()):
     return dict(X=X, observation_index=np.asarray(observation_indices, dtype=np.int32),
                 arc_id=np.asarray(arc_ids, dtype=np.int64)), observations
 
+def filter_track_quality(clean, road, config=Config()):
+    """Exclude observations with bad incoming motion or no nearby road arc.
+
+    Motion is evaluated against the preceding observation in the initially
+    cleaned track, before dropping any rows, to avoid changing the criterion
+    as rows are removed. The first observation has no incoming motion.
+    """
+    xy, direction, step, dt, speed, gap, outlier, heading_valid = motion_features(clean, road, config)
+    has_candidate = np.fromiter((len(road.candidates(point)[0]) > 0 for point in xy),
+                                dtype=bool, count=len(xy))
+    keep = ~(gap | outlier) & has_candidate
+    audit = {
+        "time_gap_over_30s": int(gap.sum()),
+        "speed_over_60mps": int(outlier.sum()),
+        "no_candidate_within_100m": int((~has_candidate).sum()),
+        "quality_removed_total": int((~keep).sum()),
+        "quality_retained": int(keep.sum()),
+    }
+    if not keep.any():
+        raise ValueError("No observations remain after motion and candidate filtering")
+    return clean.loc[keep].reset_index(drop=True), audit
+
+
 def align_reference(clean, road, route, config=Config()):
     """Offline weak labels: minimum squared-distance monotone route alignment.
 
@@ -268,7 +291,13 @@ def inventory(data_root):
                 dt = np.diff(clean.timestamp_s.to_numpy())
                 gps_xy = project(transformer, clean[["longitude", "latitude"]].to_numpy())
                 steps = np.linalg.norm(np.diff(gps_xy, axis=0), axis=1)
+                road = RoadIndex(nodes, arcs)
+                try:
+                    _, quality_audit = filter_track_quality(clean, road)
+                except ValueError:
+                    quality_audit = {"quality_removed_total": len(clean), "quality_retained": 0}
                 row.update(audit)
+                row.update(quality_audit)
                 row.update(nodes=len(nodes), arcs=len(arcs), route_entries=len(route), epsg=epsg,
                            weak_components=n_components, isolated_nodes=int((degree == 0).sum()),
                            zero_length_arcs=int((lengths <= 1e-6).sum()),
@@ -303,6 +332,7 @@ def process_dataset(data_root, output_root, config=Config()):
             clean, audit = clean_track(trip, config)
             nodes, arcs = read_graph(trip)
             road = RoadIndex(nodes, arcs, config)
+            clean, quality_audit = filter_track_quality(clean, road, config)
             candidates, observations = build_candidate_features(clean, road, config)
             # Reference data enters only AFTER prediction features exist.
             route = read_reference(trip, len(arcs))
@@ -326,7 +356,7 @@ def process_dataset(data_root, output_root, config=Config()):
                         "config": asdict(config), "source_sha256": source_hashes(trip),
                         "label_type": "derived_weak_labels", "feature_names": FEATURE_NAMES}
             (target / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-            row = dict(partition=partition, trip_id=trip.name, **audit,
+            row = dict(partition=partition, trip_id=trip.name, **audit, **quality_audit,
                        candidate_rows=len(y), no_candidate_observations=int((observations.candidate_count == 0).sum()),
                        usable_label_observations=int(usable.sum()),
                        reference_candidate_misses=int((usable & ~hits).sum()),
@@ -353,6 +383,8 @@ def make_map(trip, output_path, max_gps_points=1500):
     trip = Path(trip)
     clean, _ = clean_track(trip)
     nodes, arcs = read_graph(trip)
+    road = RoadIndex(nodes, arcs)
+    clean, _ = filter_track_quality(clean, road)
     route = read_reference(trip, len(arcs))
     center = [clean.latitude.median(), clean.longitude.median()]
     map_ = folium.Map(location=center, zoom_start=13, tiles="OpenStreetMap")
