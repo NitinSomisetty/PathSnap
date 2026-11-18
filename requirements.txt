@@ -8,3 +8,10 @@ folium
 nbformat
 nbclient
 ipykernel
+
+fastapi
+uvicorn[standard]
+xgboost
+streamlit
+streamlit-folium
+requests
