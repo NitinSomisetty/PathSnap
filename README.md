@@ -24,4 +24,3 @@ The UI lists trips from `GET /trips` and requests prediction from `POST /trips/{
 The API computes candidate features directly from the raw trip, then applies XGBoost and Viterbi. A supplied `.route` file is used only after prediction to compute a weak alignment accuracy. It is never supplied to the feature builder or decoder. Missing candidates return null arc IDs and reduce coverage. GPS gaps above 30 seconds restart decoding. The green map line shows selected road segments in observation order; it does not insert unobserved connecting arcs.
 
 Training comparison, tuning, and selection must be reviewed from recorded experiments before claiming a final result. The reserved evaluator data must never be used for training or model selection.
-
