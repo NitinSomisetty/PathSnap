@@ -32,7 +32,7 @@ The final evaluation scripts are:
 
 Both final classifiers were fitted using a stratified 150,000-row sample from the training partition. The ten-trip student-test partition was not used for fitting or hyperparameter tuning. One student-test trip had no eligible labels and was excluded from classification metrics.
 
-The live demonstration used XGBoost as the integrated classifier. Random Forest is retained as an experimental comparison and Bayesian-optimisation result.
+The live demonstration used XGBoost as the integrated classifier. Its saved model is `artifacts/final_model/xgboost_baseline.joblib`. The tuned Random Forest comparison model is saved under `artifacts/random_forest_comparison/`.
 
 Final results and the methodology are documented in `reports/FINAL_ML_EXPERIMENT_REPORT.md`.
 

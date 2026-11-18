@@ -132,7 +132,7 @@ The evaluation covered 118,594 eligible candidate rows across nine trips. Trip 0
 
 The saved XGBoost model is:
 
-`artifacts/xgboost_final_model/xgboost_baseline.joblib`
+`artifacts/final_model/xgboost_baseline.joblib`
 
 ## 6. Random Forest student-test evaluation
 
@@ -150,7 +150,7 @@ The Bayesian-optimised Random Forest was evaluated on the same eligible student-
 
 The saved tuned Random Forest model is:
 
-`artifacts/final_model/random_forest_tuned.joblib`
+`artifacts/random_forest_comparison/random_forest_tuned.joblib`
 
 ## 7. Candidate coverage and route reconstruction
 

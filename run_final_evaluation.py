@@ -25,7 +25,7 @@ PROCESSED = ROOT / "results" / "processed"
 RAW_TEST = ROOT / "Student_folder" / "Student folder" / "student_test"
 BAYESIAN = ROOT / "artifacts" / "bayesian_optimization"
 OUTPUT = ROOT / "artifacts" / "final_evaluation"
-MODEL_DIR = ROOT / "artifacts" / "final_model"
+MODEL_DIR = ROOT / "artifacts" / "random_forest_comparison"
 
 SEED = 42
 MAX_TRAIN_ROWS = 150_000

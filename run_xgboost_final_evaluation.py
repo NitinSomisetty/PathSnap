@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent
 PROCESSED = ROOT / "results" / "processed"
 RAW_TEST = ROOT / "Student_folder" / "Student folder" / "student_test"
 
-MODEL_DIR = ROOT / "artifacts" / "xgboost_final_model"
+MODEL_DIR = ROOT / "artifacts" / "final_model"
 OUTPUT = ROOT / "artifacts" / "xgboost_final_evaluation"
 
 SEED = 42
