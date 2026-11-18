@@ -34,11 +34,17 @@ if result and result['trip_id']==trip_id:
     if ref: st.caption(f"Accuracy uses {ref['usable_observations']:,} usable points aligned to the supplied route; these are weak labels.")
     points=result['observations']; center=[points[0]['latitude'],points[0]['longitude']]
     m=folium.Map(location=center,zoom_start=14,tiles='OpenStreetMap')
-    folium.PolyLine([[p['latitude'],p['longitude']] for p in points],color='#2780c2',weight=2,opacity=.5,tooltip='Raw GPS').add_to(m)
+    gps_layer=folium.FeatureGroup(name='GPS observations',show=True)
+    route_layer=folium.FeatureGroup(name='Predicted route',show=True)
+    folium.PolyLine([[p['latitude'],p['longitude']] for p in points],color='#2780c2',weight=2,opacity=.5,tooltip='Raw GPS').add_to(gps_layer)
     for segment in result['route']:
-        folium.PolyLine(segment['coordinates'],color='#13a66b',weight=5,tooltip=f"Arc {segment['arc_id']}").add_to(m)
+        folium.PolyLine(segment['coordinates'],color='#13a66b',weight=5,tooltip=f"Arc {segment['arc_id']}").add_to(route_layer)
+    gps_layer.add_to(m)
+    route_layer.add_to(m)
+    folium.LayerControl(collapsed=False).add_to(m)
     st_folium(m,width=None,height=600)
     st.caption('Blue: GPS observations · Green: decoded road segments')
+
 
 
 
