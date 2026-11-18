@@ -10,3 +10,11 @@ nbclient
 ipykernel
 xgboost
 optuna
+
+fastapi
+uvicorn[standard]
+xgboost
+streamlit
+streamlit-folium
+requests
+scikit-optimize
