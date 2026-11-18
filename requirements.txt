@@ -1,4 +1,4 @@
-numpy
+﻿numpy
 pandas
 scipy
 scikit-learn
@@ -8,3 +8,5 @@ folium
 nbformat
 nbclient
 ipykernel
+xgboost
+optuna

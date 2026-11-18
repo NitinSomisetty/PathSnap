@@ -1,0 +1,28 @@
+{
+    "model": "Random Forest",
+    "optimizer": "Optuna TPE",
+    "best_trial": 4,
+    "objective": "Mean five-fold average precision",
+    "best_value": 0.8904082373728807,
+    "best_parameters": {
+        "n_estimators": 200,
+        "max_depth": 10,
+        "min_samples_split": 3,
+        "min_samples_leaf": 8,
+        "max_features": 0.75,
+        "criterion": "entropy",
+        "class_weight": "balanced_subsample",
+        "max_samples": 0.6905541708337954
+    },
+    "mean_validation_metrics": {
+        "accuracy": 0.9249452096346289,
+        "precision": 0.6822592814774764,
+        "recall": 0.9287390678000385,
+        "f1": 0.7862149110727342,
+        "roc_auc": 0.9773653390823999,
+        "average_precision": 0.8904082373728807,
+        "observation_top1_accuracy": 0.8170665291008717
+    },
+    "seed": 42,
+    "folds": 5
+}
