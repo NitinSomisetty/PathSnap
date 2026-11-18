@@ -15,3 +15,4 @@ xgboost
 streamlit
 streamlit-folium
 requests
+scikit-optimize

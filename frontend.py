@@ -14,7 +14,8 @@ try:
     ids=[item['trip_id'] for item in response.json()]
 except requests.RequestException as exc:
     st.error(f'Cannot reach the API: {exc}'); st.stop()
-if health.json()['status']!='ready': st.warning('API setup incomplete: check model and evaluation trips on the API laptop.')
+if health.json()['status']!='ready': st.warning('API setup incomplete: check the model and trip directory on the API laptop.')
+if health.json().get('data_mode') == 'development': st.info('Development mode: showing the ten student-test trips. Set PATHSNAP_EVALUATION_DIR on the API laptop for reserved evaluation trips.')
 if not ids: st.info('No evaluation trips available.'); st.stop()
 trip_id=st.selectbox('Evaluation trip',ids)
 if st.button('Reconstruct route',type='primary'):
@@ -32,10 +33,12 @@ if result and result['trip_id']==trip_id:
     c.metric('Weak reference accuracy',f"{ref['pointwise_accuracy']:.1%}" if ref and ref['pointwise_accuracy'] is not None else 'Unavailable')
     if ref: st.caption(f"Accuracy uses {ref['usable_observations']:,} usable points aligned to the supplied route; these are weak labels.")
     points=result['observations']; center=[points[0]['latitude'],points[0]['longitude']]
-    m=folium.Map(location=center,zoom_start=14,tiles='CartoDB positron')
+    m=folium.Map(location=center,zoom_start=14,tiles='OpenStreetMap')
     folium.PolyLine([[p['latitude'],p['longitude']] for p in points],color='#2780c2',weight=2,opacity=.5,tooltip='Raw GPS').add_to(m)
     for segment in result['route']:
         folium.PolyLine(segment['coordinates'],color='#13a66b',weight=5,tooltip=f"Arc {segment['arc_id']}").add_to(m)
     st_folium(m,width=None,height=600)
     st.caption('Blue: GPS observations · Green: decoded road segments')
+
+
 

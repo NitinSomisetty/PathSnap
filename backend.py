@@ -1,5 +1,6 @@
 ﻿from pathlib import Path
 import logging, os
+from functools import lru_cache
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +9,9 @@ from pipeline_updated import Config, FEATURE_NAMES, RoadIndex, align_reference, 
 from route_decoder import decode
 
 ROOT = Path(__file__).resolve().parent
-DATA_ROOT = Path(os.getenv('PATHSNAP_EVALUATION_DIR', ROOT / 'evaluation_trips')).resolve()
+DEFAULT_EVALUATION_ROOT = ROOT / 'evaluation_trips'
+DEFAULT_DEVELOPMENT_ROOT = ROOT / 'Student_folder' / 'Student folder' / 'student_test'
+DATA_ROOT = Path(os.environ['PATHSNAP_EVALUATION_DIR']).resolve() if os.getenv('PATHSNAP_EVALUATION_DIR') else (DEFAULT_EVALUATION_ROOT if DEFAULT_EVALUATION_ROOT.is_dir() else DEFAULT_DEVELOPMENT_ROOT).resolve()
 MODEL_PATH = Path(os.getenv('PATHSNAP_MODEL_PATH', ROOT / 'artifacts' / 'xgboost_model.json'))
 app = FastAPI(title='PathSnap')
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv('PATHSNAP_CORS_ORIGINS', '*').split(','), allow_methods=['GET','POST'], allow_headers=['*'])
@@ -17,9 +20,16 @@ def trips():
     if not DATA_ROOT.is_dir(): return {}
     return {p.name:p for p in DATA_ROOT.iterdir() if p.is_dir() and all((p / f'{p.name}.{e}').is_file() for e in ('track','nodes','arcs'))}
 
+@lru_cache(maxsize=1)
+def classifier():
+    loaded = XGBClassifier()
+    loaded.load_model(str(MODEL_PATH))
+    if loaded.n_features_in_ != len(FEATURE_NAMES): raise ValueError('Model feature count mismatch')
+    return loaded
+
 @app.get('/health')
 def health():
-    return {'status':'ready' if MODEL_PATH.is_file() and DATA_ROOT.is_dir() else 'setup_required', 'trip_count':len(trips())}
+    return {'status':'ready' if MODEL_PATH.is_file() and len(trips()) > 0 else 'setup_required', 'trip_count':len(trips()), 'data_mode':'evaluation' if DATA_ROOT == DEFAULT_EVALUATION_ROOT.resolve() or os.getenv('PATHSNAP_EVALUATION_DIR') else 'development'}
 
 @app.get('/trips')
 def list_trips():
@@ -30,8 +40,7 @@ def predict(trip_id: str):
     trip = trips().get(trip_id)
     if trip is None: raise HTTPException(404, 'Unknown trip ID')
     try:
-        model = XGBClassifier(); model.load_model(str(MODEL_PATH))
-        if model.n_features_in_ != len(FEATURE_NAMES): raise ValueError('Model feature count mismatch')
+        model = classifier()
         clean, audit = clean_track(trip)
         nodes, arcs = read_graph(trip)
         road = RoadIndex(nodes, arcs, Config())
@@ -54,4 +63,5 @@ def predict(trip_id: str):
         return {'trip_id':trip_id,'observations':points,'route':route,'metrics':metrics,'audit':audit}
     except (ValueError,FileNotFoundError) as exc:
         raise HTTPException(422,str(exc)) from exc
+
 
