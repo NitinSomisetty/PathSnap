@@ -1,0 +1,77 @@
+{
+    "experiment": "PathSnap Random Forest Bayesian Optimisation",
+    "optimizer": "Optuna TPESampler",
+    "trials": 8,
+    "seed": 42,
+    "folds": 5,
+    "objective": "Mean five-fold average precision",
+    "training_row_limit_per_fold": 150000,
+    "sampling": "Fixed stratified training sample per fold",
+    "validation": "Existing trip-level training folds",
+    "usable_training_trips": 70,
+    "student_test_loaded": false,
+    "feature_names": [
+        "distance_m",
+        "arc_length_m",
+        "projection_fraction",
+        "distance_to_start_m",
+        "distance_to_end_m",
+        "heading_cos",
+        "heading_sin",
+        "heading_valid",
+        "speed_mps",
+        "dt_s",
+        "step_distance_m",
+        "gap_flag",
+        "speed_outlier_flag",
+        "previous_point_distance_m",
+        "candidate_rank",
+        "candidate_count",
+        "distance_margin_m",
+        "out_degree",
+        "in_degree"
+    ],
+    "baseline_parameters": {
+        "n_estimators": 100,
+        "max_depth": 20,
+        "min_samples_split": 2,
+        "min_samples_leaf": 2,
+        "max_features": "sqrt",
+        "criterion": "gini",
+        "class_weight": "balanced_subsample",
+        "max_samples": 1.0
+    },
+    "search_space": {
+        "n_estimators": "100 to 350, step 50",
+        "max_depth": [
+            null,
+            10,
+            15,
+            20,
+            25,
+            30,
+            40
+        ],
+        "min_samples_split": "2 to 20",
+        "min_samples_leaf": "1 to 8",
+        "max_features": [
+            "sqrt",
+            "log2",
+            0.5,
+            0.75
+        ],
+        "criterion": [
+            "gini",
+            "entropy"
+        ],
+        "class_weight": [
+            "balanced_subsample",
+            "balanced",
+            null
+        ],
+        "max_samples": "0.65 to 1.0"
+    },
+    "best_trial": 4,
+    "best_average_precision": 0.8904082373728807,
+    "elapsed_seconds": 1772.3216192000546
+}

@@ -1,0 +1,21 @@
+[
+    "distance_m",
+    "arc_length_m",
+    "projection_fraction",
+    "distance_to_start_m",
+    "distance_to_end_m",
+    "heading_cos",
+    "heading_sin",
+    "heading_valid",
+    "speed_mps",
+    "dt_s",
+    "step_distance_m",
+    "gap_flag",
+    "speed_outlier_flag",
+    "previous_point_distance_m",
+    "candidate_rank",
+    "candidate_count",
+    "distance_margin_m",
+    "out_degree",
+    "in_degree"
+]

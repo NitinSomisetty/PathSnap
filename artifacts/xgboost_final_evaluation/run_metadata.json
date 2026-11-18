@@ -1,0 +1,18 @@
+{
+    "model_file": "artifacts\\xgboost_final_model\\xgboost_baseline.joblib",
+    "training_metadata_file": "artifacts\\xgboost_final_model\\training_metadata.json",
+    "model_selection_status": "Baseline XGBoost evaluated for development-stage comparison",
+    "student_test_used_for_model_fitting": false,
+    "student_test_used_for_hyperparameter_tuning": false,
+    "candidate_classification_threshold": 0.5,
+    "viterbi_gap_seconds": 30,
+    "viterbi_switch_penalty": 2.0,
+    "viterbi_disconnected_penalty": 8.0,
+    "viterbi_note": "Same fixed graph-aware heuristic decoder as the RF evaluation.",
+    "excluded_trips": [
+        "00000076"
+    ],
+    "fit_seconds": 1.9272730000084266,
+    "total_inference_seconds": 0.15693930012639612,
+    "runtime_seconds": 4.778784099966288
+}
